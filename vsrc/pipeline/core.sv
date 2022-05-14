@@ -2,14 +2,40 @@
 `define __CORE_SV
 `ifdef VERILATOR
 `include "include/common.sv"
+`include "include/pipes.sv"
+`include "include/config.sv"
+`include "pipeline/decode/decode.sv"
+`include "pipeline/decode/decoder.sv"
+`include "pipeline/decode/id_ex_reg.sv"
+`include "pipeline/execute/alu.sv"
+`include "pipeline/execute/ex_mem_reg.sv"
+`include "pipeline/execute/execute.sv"
+`include "pipeline/execute/mux_src.sv"
+`include "pipeline/fetch/fetch.sv"
+`include "pipeline/fetch/pc_reg.sv"
+`include "pipeline/fetch/if_id_reg.sv"
+`include "pipeline/fetch/pcselect.sv"
+`include "pipeline/memory/memory.sv"
+`include "pipeline/memory/mem_wb_reg.sv"
+`include "pipeline/memory/read_memory.sv"
+`include "pipeline/memory/write_memory.sv"
 `include "pipeline/regfile/regfile.sv"
+`include "pipeline/writeback/wdata_select.sv"
+`include "pipeline/writeback/writeback.sv"
+`include "pipeline/hazard/forward_ex.sv"
+`include "pipeline/hazard/forward_id.sv"
+`include "pipeline/hazard/loadstall.sv"
+`include "pipeline/hazard/handshake.sv"
+`include "pipeline/hazard/memory_end.sv"
+
 
 `else
 
 `endif
 
 module core 
-	import common::*;(
+	import common::*;
+	import pipes::*;(
 	input logic clk, reset,
 	output ibus_req_t  ireq,
 	input  ibus_resp_t iresp,
@@ -18,32 +44,291 @@ module core
 );
 	/* TODO: Add your pipeline here. */
 
+	u64 pc, pc_nxt;
+	fetch_data_t dataF, dataF_nxt;
+	decode_data_t dataD, dataD_nxt;
+	excute_data_t dataE, dataE_nxt;
+	memory_data_t dataM, dataM_nxt;
+	write_data_t dataW;
+	u32 raw_instr;
+	creg_addr_t ra1, ra2;
+	word_t rd1, rd2;
+	word_t rd1_f, rd2_f;
+	word_t rd1_new, rd2_new;
+	word_t srca, srcb, alu_result, wdata;
+	word_t mdata, store_data;
+	u1 load_stall, jump_flag;
+	u1 dbus_handle, ibus_handle;
+	u1 handshake_stall;
+	u1 finish;
+	u1 skip;
+	
+	assign handshake_stall = dbus_handle | ibus_handle;
+
+	assign skip = (dataW.ctl.memread || dataW.ctl.memwrite) && (dataM.alu_result[31] == 1'b0);
+
+	assign ireq.addr = pc;
+	assign ireq.valid = ON;
+	assign raw_instr = iresp.data;
+
+	assign dreq.valid = (dataE.ctl.memread | dataE.ctl.memwrite) & (~finish);
+	assign dreq.addr = dataE.alu_result;
+	// assign dreq.strobe = {8{dataE.ctl.memwrite}};
+	// assign dreq.data = dataE.rd2;
+
+
+	//-------取指-------
+	pcselect pcselect (
+		.pcplus4(pc + 4),
+		.pcjump(dataE.alu_result),
+		.ctl(dataE.ctl),
+		.branch_flag(dataE.branch_flag),
+		.pc_nxt,
+		.jump_flag
+	);
+
+	pc_reg pc_reg (
+		.pc,
+		.pc_nxt,
+		.clk,
+		.reset,
+		.load_stall,
+		.jump_flag,
+		.handshake_stall
+	);
+
+	handshake ibus_handshake (
+		.valid(ireq.valid),
+		.data_ok(iresp.data_ok),
+		.handle(ibus_handle)
+	);
+
+	fetch fetch (
+		.dataF(dataF_nxt),
+		.raw_instr(raw_instr),
+		.pc
+	);
+
+	if_id_reg if_id_reg (
+		.clk,
+		.reset,
+		.load_stall,
+		.jump_flag,
+		.handshake_stall,
+		.dataF_nxt,
+		.dataF
+	);
+
+
+	//-------译码-------
+	forward_id forward_id_a (
+		.rs(ra1),
+		.writeregW(dataW.dst),
+		.regwriteW(dataW.ctl.regwrite),
+		.rdW(dataW.wdata),
+		.rd0(rd1),
+		.rd(rd1_f)
+	);
+
+	forward_id forward_id_b (
+		.rs(ra2),
+		.writeregW(dataW.dst),
+		.regwriteW(dataW.ctl.regwrite),
+		.rdW(dataW.wdata),
+		.rd0(rd2),
+		.rd(rd2_f)
+	);
+
+
+	decode decode (
+		.dataD(dataD_nxt),
+		.ra1, 
+		.ra2,
+		.dataF,
+		.rd1(rd1_f), 
+		.rd2(rd2_f)
+	);
+
+	loadstall loadstall (
+		.ra1, 
+		.ra2,
+		.dstE(dataD.dst),
+		.memtoreg(dataD.ctl.memtoreg),
+		.load_stall
+	);
+
+	id_ex_reg id_ex_reg (
+		.clk,
+		.reset,
+		.load_stall,
+		.jump_flag,
+		.handshake_stall,
+		.dataD_nxt,
+		.dataD
+	);
+
+	//-------执行-------
+	forward_ex forward_ex_a (
+		.rs(dataD.ra1),
+		.writeregM(dataE.dst),
+		.writeregW(dataW.dst),
+		.regwriteM(dataE.ctl.regwrite),
+		.regwriteW(dataW.ctl.regwrite),
+		.rdM(dataE.alu_result),
+		.rdW(dataW.wdata),
+		.rdE(dataD.rd1),
+		.rd(rd1_new)
+	);
+
+	forward_ex forward_ex_b (
+		.rs(dataD.ra2),
+		.writeregM(dataE.dst),
+		.writeregW(dataW.dst),
+		.regwriteM(dataE.ctl.regwrite),
+		.regwriteW(dataW.ctl.regwrite),
+		.rdM(dataE.alu_result),
+		.rdW(dataW.wdata),
+		.rdE(dataD.rd2),
+		.rd(rd2_new)
+	);
+
+	mux_src mux_srca (
+		.src1(dataD.pc),
+		.src2(rd1_new),
+		.flag(dataD.ctl.srca_flag),
+		.src(srca)
+	);
+
+	mux_src mux_srcb (
+		.src1(dataD.imm),
+		.src2(rd2_new),
+		.flag(dataD.ctl.srcb_flag),
+		.src(srcb)
+	);
+
+	alu alu(
+		.a(srca),
+		.b(srcb),
+		.alufunc(dataD.ctl.alufunc),
+		.alu_result
+	);
+
+	execute execute (
+		.alu_result,
+		.dataD,
+		.rd1(rd1_new),
+		.rd2(rd2_new),
+		.dataE(dataE_nxt)
+	);
+
+	ex_mem_reg ex_mem_reg (
+		.clk,
+		.reset,
+		.jump_flag,
+		.handshake_stall,
+		.data_ok(dresp.data_ok),
+		.dataE_nxt,
+		.dataE
+	);
+
+
+	//-------访存-------
+	read_memory read_memory (
+		.mem_data(dresp.data),
+		.mem_addr(dataE.alu_result),
+		.msize(dataE.ctl.msize),
+		.mem_unsigned(dataE.ctl.mem_unsigned),
+		.data(mdata)
+	);
+
+	write_memory write_memory(
+		.mem_addr(dataE.alu_result),
+		.rd2(dataE.rd2),
+		.msize(dataE.ctl.msize),
+		.memwrite(dataE.ctl.memwrite),
+		.wd(dreq.data),
+		.strobe(dreq.strobe)
+	);
+
+	memory_end memory_end(
+		.clk,
+		.reset,
+		.data_ok(dresp.data_ok),
+		.handshake_stall,
+		.read_data(mdata),
+		.finish,
+		.store_data
+	);
+
+
+	memory memory (
+		.dataM(dataM_nxt),
+    	.dataE,
+		.finish,
+		.data1(mdata),
+		.data2(store_data),
+    	.dresp
+	);
+
+	handshake dbus_handshake (
+		.valid(dreq.valid),
+		.data_ok(dresp.data_ok),
+		.handle(dbus_handle)
+	);
+
+	mem_wb_reg mem_wb_reg(
+		.clk,
+		.reset,
+		.handshake_stall,
+		.jump_flag,
+		.data_ok(dresp.data_ok),
+		.dataM_nxt,
+    	.dataM
+	);
+
+	//-------写回-------
+	wdata_select wdata_select (
+		.alu_result(dataM.alu_result),
+    	.pcplus4(dataM.pcplus4),
+    	.mem_data(dataM.mem_data),
+    	.ctl(dataM.ctl),
+    	.wdata
+	);
+
+	writeback writeback (
+		.dataM,
+		.wdata,
+		.dataW
+	);
 
 	regfile regfile(
-		.clk, .reset,
-		.ra1(),
-		.ra2(),
-		.rd1(),
-		.rd2(),
-		.wvalid(),
-		.wa(),
-		.wd()
+		.clk, 
+		.reset,
+		.ra1,
+		.ra2,
+		.rd1,
+		.rd2,
+		.wvalid(dataW.ctl.regwrite),
+		.wa(dataW.dst),
+		.wd(dataW.wdata)
 	);
+
+
 
 `ifdef VERILATOR
 	DifftestInstrCommit DifftestInstrCommit(
 		.clock              (clk),
 		.coreid             (0),
 		.index              (0),
-		.valid              (0),
-		.pc                 (0),
+		.valid              (dataW.en && (~handshake_stall)),
+		.pc                 (dataW.pc),
 		.instr              (0),
-		.skip               (0),
+		.skip               ,
 		.isRVC              (0),
 		.scFailed           (0),
-		.wen                (0),
-		.wdest              (0),
-		.wdata              (0)
+		.wen                (dataW.ctl.regwrite),
+		.wdest              ({3'b0, dataW.dst}),
+		.wdata              (dataW.wdata)
 	);
 	      
 	DifftestArchIntRegState DifftestArchIntRegState (
