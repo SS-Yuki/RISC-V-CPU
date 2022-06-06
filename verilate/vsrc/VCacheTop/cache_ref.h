@@ -27,6 +27,8 @@ private:
 	 *
 	 * NOTE: you can use BlockMemory, or replace it with anything you like.
 	 */
+	word_t buffer[16];
+	
 #endif
 
 	 // int state;

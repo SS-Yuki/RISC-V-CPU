@@ -108,6 +108,9 @@ package common;
  typedef `BITS(66) i66;
  typedef `BITS(67) i67;
  typedef `BITS(68) i68;
+
+ typedef `BITS(128) i128;
+ typedef `BITS(129) i129;
  
  // for arithmetic overflow detection
  typedef i65 arith_t;

@@ -19,8 +19,10 @@ module alu
 );
 	u32 tem1;
 	u64 tem2;
-	always_latch begin
+	always_comb begin
 		alu_result = '0;
+		tem1 = '0;
+		tem2 = '0;
 		unique case(alufunc)
 			ALU_ADD: alu_result = a + b;
 			ALU_SUB: alu_result = a - b;

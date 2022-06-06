@@ -20,6 +20,7 @@ module decoder
 
     always_comb begin 
         ctl = '0;
+        imm = '0;
         unique case(f7)
             F7_TypeI: begin
                 ctl.srcb_flag = ON;
@@ -102,71 +103,145 @@ module decoder
                 endcase
             end
             F7_TypeR: begin
-                unique case(f3)
-                    F3_ADD_SUB: begin
-                        ctl.op = raw_instr[30] ? SUB : ADD;
-                        ctl.alufunc = raw_instr[30] ? ALU_SUB : ALU_ADD;
-                        ctl.regwrite = ON;
+                unique case(raw_instr[25])
+                    OFF: begin
+                        unique case(f3)
+                            F3_ADD_SUB: begin
+                                ctl.op = raw_instr[30] ? SUB : ADD;
+                                ctl.alufunc = raw_instr[30] ? ALU_SUB : ALU_ADD;
+                                ctl.regwrite = ON;
+                            end
+                            F3_AND: begin
+                                ctl.op = AND;
+                                ctl.alufunc = ALU_AND;
+                                ctl.regwrite = ON;
+                            end
+                            F3_OR: begin
+                                ctl.op = OR;
+                                ctl.alufunc = ALU_OR;
+                                ctl.regwrite = ON;
+                            end
+                            F3_XOR: begin
+                                ctl.op = XOR;
+                                ctl.alufunc = ALU_XOR;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SLL: begin
+                                ctl.op = SLL;
+                                ctl.alufunc = ALU_SLL;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SLT: begin
+                                ctl.op = SLT;
+                                ctl.alufunc = ALU_SLT;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SLTU: begin
+                                ctl.op = SLTU;
+                                ctl.alufunc = ALU_SLTU;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SRA_SRL: begin
+                                ctl.op = raw_instr[30] ? SRA : SRL;
+                                ctl.alufunc = raw_instr[30] ? ALU_SRA : ALU_SRL;
+                                ctl.regwrite = ON;
+                            end
+                            default:begin
+                            end
+                        endcase
                     end
-                    F3_AND: begin
-                        ctl.op = AND;
-                        ctl.alufunc = ALU_AND;
-                        ctl.regwrite = ON;
-                    end
-                    F3_OR: begin
-                        ctl.op = OR;
-                        ctl.alufunc = ALU_OR;
-                        ctl.regwrite = ON;
-                    end
-                    F3_XOR: begin
-                        ctl.op = XOR;
-                        ctl.alufunc = ALU_XOR;
-                        ctl.regwrite = ON;
-                    end
-                    F3_SLL: begin
-                        ctl.op = SLL;
-                        ctl.alufunc = ALU_SLL;
-                        ctl.regwrite = ON;
-                    end
-                    F3_SLT: begin
-                        ctl.op = SLT;
-                        ctl.alufunc = ALU_SLT;
-                        ctl.regwrite = ON;
-                    end
-                    F3_SLTU: begin
-                        ctl.op = SLTU;
-                        ctl.alufunc = ALU_SLTU;
-                        ctl.regwrite = ON;
-                    end
-                    F3_SRA_SRL: begin
-                        ctl.op = raw_instr[30] ? SRA : SRL;
-                        ctl.alufunc = raw_instr[30] ? ALU_SRA : ALU_SRL;
-                        ctl.regwrite = ON;
-                    end
-                    default:begin
+                    ON: begin
+                        ctl.mulalu_type = ON;
+                        unique case(f3)
+                            F3_MUL: begin
+                                ctl.op = MUL;
+                                ctl.alufunc = ALU_MUL;
+                                ctl.regwrite = ON;
+                            end
+                            F3_DIV: begin
+                                ctl.op = DIV;
+                                ctl.alufunc = ALU_DIV;
+                                ctl.regwrite = ON;
+                            end
+                            F3_DIVU: begin
+                                ctl.op = DIVU;
+                                ctl.alufunc = ALU_DIVU;
+                                ctl.regwrite = ON;
+                            end
+                            F3_REM: begin
+                                ctl.op = REM;
+                                ctl.alufunc = ALU_REM;
+                                ctl.regwrite = ON;
+                            end
+                            F3_REMU: begin
+                                ctl.op = REMU;
+                                ctl.alufunc = ALU_REMU;
+                                ctl.regwrite = ON;
+                            end
+                            default:begin
+                            end
+                        endcase
                     end
                 endcase
+                
             end
             F7_TypeR_W: begin
-                unique case(f3)
-                    F3_ADDW_SUBW: begin
-                        ctl.op = raw_instr[30] ? SUBW : ADDW;
-                        ctl.alufunc = raw_instr[30] ? ALU_SUBW : ALU_ADDW;
-                        ctl.regwrite = ON;
+                unique case(raw_instr[25])
+                    OFF: begin
+                        unique case(f3)
+                            F3_ADDW_SUBW: begin
+                                ctl.op = raw_instr[30] ? SUBW : ADDW;
+                                ctl.alufunc = raw_instr[30] ? ALU_SUBW : ALU_ADDW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SLLW: begin
+                                ctl.op = SLLW;
+                                ctl.alufunc = ALU_SLLW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_SRAW_SRLW: begin
+                                ctl.op = raw_instr[30] ? SRAW : SRLW;
+                                ctl.alufunc = raw_instr[30] ? ALU_SRAW : ALU_SRLW;
+                                ctl.regwrite = ON;
+                            end
+                            default:begin
+                            end
+                        endcase
                     end
-                    F3_SLLW: begin
-                        ctl.op = SLLW;
-                        ctl.alufunc = ALU_SLLW;
-                        ctl.regwrite = ON;
-                    end
-                    F3_SRAW_SRLW: begin
-                        ctl.op = raw_instr[30] ? SRAW : SRLW;
-                        ctl.alufunc = raw_instr[30] ? ALU_SRAW : ALU_SRLW;
-                        ctl.regwrite = ON;
-                    end
-                    default:begin
+                    ON: begin
+                        ctl.mulalu_type = ON;
+                        unique case(f3)
+                            F3_MULW: begin
+                                ctl.op = MULW;
+                                ctl.alufunc = ALU_MULW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_DIVW: begin
+                                ctl.op = DIVW;
+                                ctl.alufunc = ALU_DIVW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_DIVUW: begin
+                                ctl.op = DIVUW;
+                                ctl.alufunc = ALU_DIVUW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_REMW: begin
+                                ctl.op = REMW;
+                                ctl.alufunc = ALU_REMW;
+                                ctl.regwrite = ON;
+                            end
+                            F3_REMUW: begin
+                                ctl.op = REMUW;
+                                ctl.alufunc = ALU_REMUW;
+                                ctl.regwrite = ON;
+                            end
+                            default:begin
+                            end
+                        endcase
                     end
                 endcase
+                
             end
             F7_LUI: begin
                 imm = {{32{raw_instr[31]}}, raw_instr[31:12], {12{1'b0}}};

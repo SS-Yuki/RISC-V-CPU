@@ -44,7 +44,6 @@ parameter F7_AUIPC = 7'b0010111;
 parameter F7_JAL = 7'b1101111;
 parameter F7_JALR = 7'b1100111;
 
-
 parameter F3_ADDI = 3'b000;
 parameter F3_ANDI = 3'b111;
 parameter F3_ORI = 3'b110;
@@ -73,6 +72,18 @@ parameter F3_ADDW_SUBW = 3'b000;
 parameter F3_SLLW = 3'b001;
 parameter F3_SRAW_SRLW = 3'b101;
 
+parameter F3_MUL = 3'b000;
+parameter F3_DIV = 3'b100;
+parameter F3_DIVU = 3'b101;
+parameter F3_REM = 3'b110;
+parameter F3_REMU = 3'b111;
+
+parameter F3_MULW = 3'b000;
+parameter F3_DIVW = 3'b100;
+parameter F3_DIVUW = 3'b101;
+parameter F3_REMW = 3'b110;
+parameter F3_REMUW = 3'b111;
+
 parameter F3_BEQ = 3'b000;
 parameter F3_BNE = 3'b001;
 parameter F3_BLT = 3'b100;
@@ -99,13 +110,15 @@ typedef enum logic [5:0] {
 	LUI, AUIPC, BEQ, JAL, JALR, LD, SD, SLLI, SLTI, SLTIU, 
 	SRAI, SRLI, ADDIW, SLLIW, SRAIW, SRLIW, SLL, SLT, SLTU, 
 	SRA, SRL, ADDW, SUBW, SLLW, SRAW, SRLW, BNE, BLT, BGE, BGEU,
-	BLTU, SB, SH, SW, LB, LH, LW, LBU, LHU, LWU
+	BLTU, SB, SH, SW, LB, LH, LW, LBU, LHU, LWU, MUL, MULW, DIV, 
+	DIVW, DIVU, DIVUW, REM, REMW, REMU, REMUW
 }decode_op_t;
 
 typedef enum logic [4:0] {
 	ALU_UNKNOWN, ALU_ADD, ALU_SUB, ALU_AND, ALU_OR, ALU_XOR, ALU_ASSIGN,
 	ALU_SLL, ALU_SLT, ALU_SLTU, ALU_SRA, ALU_SRL, ALU_ADDW, ALU_SUBW, ALU_SLLW, 
-	ALU_SRAW, ALU_SRLW
+	ALU_SRAW, ALU_SRLW, ALU_MUL, ALU_MULW, ALU_DIV, ALU_DIVW, ALU_DIVU, ALU_DIVUW, 
+	ALU_REM, ALU_REMW, ALU_REMU, ALU_REMUW
 }alufunc_t;
 
 typedef struct packed {
@@ -122,6 +135,7 @@ typedef struct packed {
 	u1 memtoreg;
 	msize_t msize;
 	u1 mem_unsigned;
+	u1 mulalu_type;
 }control_t;
 
 typedef struct packed {

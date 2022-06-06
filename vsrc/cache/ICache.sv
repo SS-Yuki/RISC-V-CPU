@@ -16,7 +16,15 @@ module ICache
 );
 
 `ifndef REFERENCE_CACHE
-
+	dbus_resp_t dresp;
+	DCache lazy (
+		.clk, .reset,
+		.dreq(`IREQ_TO_DREQ(ireq)),
+		.dresp,
+		.creq,
+		.cresp
+	);
+	assign iresp = `DRESP_TO_IRESP(dresp, ireq);
 
 
 `else

@@ -8,6 +8,10 @@
 `include "pipeline/decode/decoder.sv"
 `include "pipeline/decode/id_ex_reg.sv"
 `include "pipeline/execute/alu.sv"
+`include "pipeline/execute/alu_mul.sv"
+`include "pipeline/execute/divider_32.sv"
+`include "pipeline/execute/divider_64.sv"
+`include "pipeline/execute/multiplier_64.sv"
 `include "pipeline/execute/ex_mem_reg.sv"
 `include "pipeline/execute/execute.sv"
 `include "pipeline/execute/mux_src.sv"
@@ -26,7 +30,7 @@
 `include "pipeline/hazard/forward_id.sv"
 `include "pipeline/hazard/loadstall.sv"
 `include "pipeline/hazard/handshake.sv"
-`include "pipeline/hazard/memory_end.sv"
+`include "pipeline/hazard/handshake_reg.sv"
 
 
 `else
@@ -50,20 +54,27 @@ module core
 	excute_data_t dataE, dataE_nxt;
 	memory_data_t dataM, dataM_nxt;
 	write_data_t dataW;
+
 	u32 raw_instr;
 	creg_addr_t ra1, ra2;
 	word_t rd1, rd2;
 	word_t rd1_f, rd2_f;
 	word_t rd1_new, rd2_new;
 	word_t srca, srcb, alu_result, wdata;
-	word_t mdata, store_data;
+	word_t mdata, mem_store;
+	word_t alu_data, alu_store;
+
 	u1 load_stall, jump_flag;
 	u1 dbus_handle, ibus_handle;
+	u1 alu_handle;
+	u1 alu_valid;
+	u1 alu_data_ok;
 	u1 handshake_stall;
-	u1 finish;
+	u1 memfinish;
+	u1 alufinish;
 	u1 skip;
 	
-	assign handshake_stall = dbus_handle | ibus_handle;
+	assign handshake_stall = dbus_handle | ibus_handle | alu_handle;
 
 	assign skip = (dataW.ctl.memread || dataW.ctl.memwrite) && (dataM.alu_result[31] == 1'b0);
 
@@ -71,10 +82,14 @@ module core
 	assign ireq.valid = ON;
 	assign raw_instr = iresp.data;
 
-	assign dreq.valid = (dataE.ctl.memread | dataE.ctl.memwrite) & (~finish);
+	assign dreq.valid = (dataE.ctl.memread | dataE.ctl.memwrite) & (~memfinish);
 	assign dreq.addr = dataE.alu_result;
 	// assign dreq.strobe = {8{dataE.ctl.memwrite}};
 	// assign dreq.data = dataE.rd2;
+
+	assign alu_valid = dataD.ctl.mulalu_type & (~alufinish);
+
+	assign alu_handle = alu_valid & (~alu_data_ok);
 
 
 	//-------取指-------
@@ -213,8 +228,32 @@ module core
 		.alu_result
 	);
 
+	alu_mul alu_mul(
+		.clk, 
+		.reset, 
+		.a(srca),
+		.b(srcb),
+		.alufunc(dataD.ctl.alufunc),
+		.valid(alu_valid),
+		.alu_result(alu_data),
+		.data_ok(alu_data_ok)
+	);
+
+	handshake_reg alu_end(
+		.clk,
+		.reset,
+		.data_ok(alu_data_ok),
+		.handshake_stall,
+		.read_data(alu_data),
+		.finish(alufinish),
+		.store_data(alu_store)
+	);
+
 	execute execute (
-		.alu_result,
+		.sin_result(alu_result),
+		.mul_result_s(alu_store),
+		.mul_result_d(alu_data),
+		.finish(alufinish),
 		.dataD,
 		.rd1(rd1_new),
 		.rd2(rd2_new),
@@ -250,23 +289,23 @@ module core
 		.strobe(dreq.strobe)
 	);
 
-	memory_end memory_end(
+	handshake_reg memory_end(
 		.clk,
 		.reset,
 		.data_ok(dresp.data_ok),
 		.handshake_stall,
 		.read_data(mdata),
-		.finish,
-		.store_data
+		.finish(memfinish),
+		.store_data(mem_store)
 	);
 
 
 	memory memory (
 		.dataM(dataM_nxt),
     	.dataE,
-		.finish,
+		.finish(memfinish),
 		.data1(mdata),
-		.data2(store_data),
+		.data2(mem_store),
     	.dresp
 	);
 

@@ -11,13 +11,17 @@
 module execute
     import common::*;
     import pipes::*;(
-    input word_t alu_result,
+    input word_t sin_result,
+    input word_t mul_result_s,
+    input word_t mul_result_d,
+    input u1 finish,
 	input decode_data_t dataD,
     input word_t rd1,
     input word_t rd2,
     output excute_data_t dataE
 );
-    assign dataE.alu_result = alu_result;
+    assign dataE.alu_result = dataD.ctl.mulalu_type ? (finish ? mul_result_s : mul_result_d)
+                                                    : sin_result;
     assign dataE.rd2 = rd2;
 	assign dataE.dst = dataD.dst;
     assign dataE.ctl = dataD.ctl;

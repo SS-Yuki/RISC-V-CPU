@@ -1,5 +1,5 @@
-`ifndef _MEMORY_END_SV
-`define _MEMORY_END_SV
+`ifndef _HANDSHAKE_REG_SV
+`define _HANDSHAKE_REG_SV
 
 `ifdef VERILATOR
 `include "include/common.sv"
@@ -8,7 +8,7 @@
 
 `endif 
 
-module memory_end
+module handshake_reg
     import common::*;
     import pipes::*;(
     input u1 clk,
