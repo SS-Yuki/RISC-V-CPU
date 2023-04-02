@@ -15,11 +15,12 @@ module loadstall
     input creg_addr_t ra2,
     input creg_addr_t dstE,
     input u1 memtoreg,
+    input u1 csr_flush,
     output u1 load_stall
 );
     always_comb begin
         load_stall = '0;
-        if (((ra1 == dstE) || (ra2 == dstE)) && (memtoreg)) begin
+        if (((ra1 == dstE) || (ra2 == dstE)) && (memtoreg) && ~csr_flush) begin
             load_stall = ON;
         end
         else begin

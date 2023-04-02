@@ -16,6 +16,7 @@ module pcselect
     input u64 pcjump,
     input control_t ctl,
     input u1 branch_flag,
+    input u1 csr_flush,
     output u64 pc_nxt,
     output u1 jump_flag
 );  

@@ -14,6 +14,7 @@ module execute
     input word_t sin_result,
     input word_t mul_result_s,
     input word_t mul_result_d,
+    input word_t alu_csr_result,
     input u1 finish,
 	input decode_data_t dataD,
     input word_t rd1,
@@ -21,9 +22,10 @@ module execute
     output excute_data_t dataE
 );
     assign dataE.alu_result = dataD.ctl.mulalu_type ? (finish ? mul_result_s : mul_result_d)
-                                                    : sin_result;
+                                                    : sin_result;                                           
     assign dataE.rd2 = rd2;
 	assign dataE.dst = dataD.dst;
+    
     assign dataE.ctl = dataD.ctl;
     assign dataE.pc = dataD.pc;
 	assign dataE.en = dataD.en;
@@ -40,6 +42,12 @@ module execute
             default: begin
             end
         endcase
+    end
+
+    always_comb begin 
+        dataE.csr_data = dataD.csr_data;
+        
+        dataE.csr_data.wd = alu_csr_result;
     end
 	
 endmodule

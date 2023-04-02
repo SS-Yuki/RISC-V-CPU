@@ -29,6 +29,9 @@ module alu
 			ALU_AND: alu_result = a & b;
 			ALU_OR: alu_result = a | b;
 			ALU_XOR: alu_result = a ^ b;
+
+			ALU_AND_NOT: alu_result = a & ~b;
+
 			ALU_ASSIGN: alu_result = b;
 
 			ALU_SLL: alu_result = a << b[5:0];

@@ -16,6 +16,7 @@ module if_id_reg
 	input u1 load_stall,
 	input u1 jump_flag,
 	input u1 handshake_stall,
+	input u1 csr_flush,
     input fetch_data_t dataF_nxt,
     output fetch_data_t dataF
 );
@@ -26,7 +27,7 @@ module if_id_reg
 		else if (handshake_stall) begin
 			dataF <= dataF;
 		end
-		else if (jump_flag) begin
+		else if (jump_flag | csr_flush) begin
 			dataF <= '0;
 		end
 		else if (load_stall) begin

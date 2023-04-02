@@ -1,5 +1,5 @@
-`ifndef _MUX_SRC_SV
-`define _MUX_SRC_SV
+`ifndef _MUX_SRCA_SV
+`define _MUX_SRCA_SV
 
 `ifdef VERILATOR
 `include "include/common.sv"
@@ -8,7 +8,7 @@
 
 `endif 
 
-module mux_src
+module mux_srca
     import common::*;
     import pipes::*;(
     input word_t src1,

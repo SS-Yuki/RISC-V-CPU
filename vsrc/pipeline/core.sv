@@ -4,6 +4,7 @@
 `include "include/common.sv"
 `include "include/pipes.sv"
 `include "include/config.sv"
+`include "include/csr_pkg.sv"
 `include "pipeline/decode/decode.sv"
 `include "pipeline/decode/decoder.sv"
 `include "pipeline/decode/id_ex_reg.sv"
@@ -14,15 +15,18 @@
 `include "pipeline/execute/multiplier_64.sv"
 `include "pipeline/execute/ex_mem_reg.sv"
 `include "pipeline/execute/execute.sv"
-`include "pipeline/execute/mux_src.sv"
+`include "pipeline/execute/mux_srca.sv"
+`include "pipeline/execute/mux_srcb.sv"
 `include "pipeline/fetch/fetch.sv"
 `include "pipeline/fetch/pc_reg.sv"
 `include "pipeline/fetch/if_id_reg.sv"
 `include "pipeline/fetch/pcselect.sv"
+`include "pipeline/fetch/pcselect_csr.sv"
 `include "pipeline/memory/memory.sv"
 `include "pipeline/memory/mem_wb_reg.sv"
 `include "pipeline/memory/read_memory.sv"
 `include "pipeline/memory/write_memory.sv"
+`include "pipeline/memory/exce_mem.sv"
 `include "pipeline/regfile/regfile.sv"
 `include "pipeline/writeback/wdata_select.sv"
 `include "pipeline/writeback/writeback.sv"
@@ -31,6 +35,8 @@
 `include "pipeline/hazard/loadstall.sv"
 `include "pipeline/hazard/handshake.sv"
 `include "pipeline/hazard/handshake_reg.sv"
+`include "pipeline/hazard/flush_csr.sv"
+`include "pipeline/csr/csr.sv"
 
 
 `else
@@ -49,7 +55,7 @@ module core
 );
 	/* TODO: Add your pipeline here. */
 
-	u64 pc, pc_nxt;
+	u64 pc, pc_nxt, pc_nxt0;
 	fetch_data_t dataF, dataF_nxt;
 	decode_data_t dataD, dataD_nxt;
 	excute_data_t dataE, dataE_nxt;
@@ -74,22 +80,67 @@ module core
 	u1 memfinish;
 	u1 alufinish;
 	u1 skip;
+
+	csr_addr_t csr_ra;
+	word_t csr_rd;
+	word_t alu_csr_result;
+
+	word_t alu_csr_srcb;
+
+	u64 csr_mepc;
+	u64 csr_mtvec;
+
+	u1 mem_is_exception;
+	exception_t mem_exception;
+
+	u1 csr_flush;
+
+	u64 ex_mem_counter;
+	u64 id_ex_counter;
+	u64 mem_wb_counter;
+	u64 pc_reg_counter;
+
+	u1 interrupt_flag;
 	
 	assign handshake_stall = dbus_handle | ibus_handle | alu_handle;
 
 	assign skip = (dataW.ctl.memread || dataW.ctl.memwrite) && (dataM.alu_result[31] == 1'b0);
 
+	//ireq
+	always_comb begin
+		ireq.valid = (pc[1:0] == 2'b00);
+		if (csr_flush & (ex_mem_counter == '0)) begin
+			ireq.valid = '0;
+		end
+		else begin
+			
+		end
+	end
 	assign ireq.addr = pc;
-	assign ireq.valid = ON;
 	assign raw_instr = iresp.data;
 
-	assign dreq.valid = (dataE.ctl.memread | dataE.ctl.memwrite) & (~memfinish);
+	//dreq
+	always_comb begin
+		dreq.valid = (dataE.ctl.memread | dataE.ctl.memwrite) & (~memfinish) & (~mem_is_exception);
+		if (csr_flush & (ex_mem_counter == '0)) begin
+			dreq.valid = '0;
+		end
+		else begin
+			
+		end
+	end
 	assign dreq.addr = dataE.alu_result;
-	// assign dreq.strobe = {8{dataE.ctl.memwrite}};
-	// assign dreq.data = dataE.rd2;
-
-	assign alu_valid = dataD.ctl.mulalu_type & (~alufinish);
-
+	
+	//多周期ALU
+	always_comb begin
+		alu_valid = dataD.ctl.mulalu_type & (~alufinish);
+		if (csr_flush & (id_ex_counter == '0)) begin
+			alu_valid = '0;
+		end
+		else begin
+			
+		end
+	end
 	assign alu_handle = alu_valid & (~alu_data_ok);
 
 
@@ -99,18 +150,32 @@ module core
 		.pcjump(dataE.alu_result),
 		.ctl(dataE.ctl),
 		.branch_flag(dataE.branch_flag),
-		.pc_nxt,
+		.pc_nxt(pc_nxt0),
+		.csr_flush(csr_flush),
 		.jump_flag
 	);
 
+	pcselect_csr pcselect_csr (
+		.pc_nxt0(pc_nxt0),
+    	.pcselect_mepc(csr_mepc),
+		.mepc_flag(dataM.csr_data.is_mret),
+		.pcselect_mtvec(csr_mtvec),
+		.mtvec_flag(dataM.csr_data.is_exception | interrupt_flag),
+		.pc(dataM.pc),
+		.csr_w_flag(dataM.csr_data.wvalid),
+		.pc_nxt(pc_nxt)
+	);
+
 	pc_reg pc_reg (
+		.counter(pc_reg_counter),
 		.pc,
 		.pc_nxt,
 		.clk,
 		.reset,
 		.load_stall,
 		.jump_flag,
-		.handshake_stall
+		.handshake_stall,
+		.csr_flush(csr_flush)
 	);
 
 	handshake ibus_handshake (
@@ -131,6 +196,7 @@ module core
 		.load_stall,
 		.jump_flag,
 		.handshake_stall,
+		.csr_flush(csr_flush),
 		.dataF_nxt,
 		.dataF
 	);
@@ -160,9 +226,11 @@ module core
 		.dataD(dataD_nxt),
 		.ra1, 
 		.ra2,
+		.csr_ra,
 		.dataF,
 		.rd1(rd1_f), 
-		.rd2(rd2_f)
+		.rd2(rd2_f),
+		.csr_rd
 	);
 
 	loadstall loadstall (
@@ -170,7 +238,8 @@ module core
 		.ra2,
 		.dstE(dataD.dst),
 		.memtoreg(dataD.ctl.memtoreg),
-		.load_stall
+		.load_stall,
+		.csr_flush(csr_flush)
 	);
 
 	id_ex_reg id_ex_reg (
@@ -179,8 +248,10 @@ module core
 		.load_stall,
 		.jump_flag,
 		.handshake_stall,
+		.csr_flush(csr_flush),
 		.dataD_nxt,
-		.dataD
+		.dataD,
+		.counter(id_ex_counter)
 	);
 
 	//-------执行-------
@@ -208,17 +279,18 @@ module core
 		.rd(rd2_new)
 	);
 
-	mux_src mux_srca (
+	mux_srca mux_srca (
 		.src1(dataD.pc),
 		.src2(rd1_new),
 		.flag(dataD.ctl.srca_flag),
 		.src(srca)
 	);
 
-	mux_src mux_srcb (
-		.src1(dataD.imm),
-		.src2(rd2_new),
-		.flag(dataD.ctl.srcb_flag),
+	mux_srcb mux_srcb (
+		.word_reg(rd2_new),
+    	.word_imm(dataD.imm),
+		.word_csr(dataD.csr_rd),
+		.srcb_flag(dataD.ctl.srcb_flag),
 		.src(srcb)
 	);
 
@@ -227,6 +299,20 @@ module core
 		.b(srcb),
 		.alufunc(dataD.ctl.alufunc),
 		.alu_result
+	);
+
+	mux_srca mux_csr_scrb (
+		.src1(dataD.imm),
+		.src2(srca),
+		.flag(dataD.csr_data.imm_flag),
+		.src(alu_csr_srcb)
+	);
+
+	alu alu_csr(
+		.a(dataD.csr_rd),
+		.b(alu_csr_srcb),
+		.alufunc(dataD.csr_data.alufunc_csr),
+		.alu_result(alu_csr_result)
 	);
 
 	alu_mul alu_mul(
@@ -254,6 +340,7 @@ module core
 		.sin_result(alu_result),
 		.mul_result_s(alu_store),
 		.mul_result_d(alu_data),
+		.alu_csr_result,
 		.finish(alufinish),
 		.dataD,
 		.rd1(rd1_new),
@@ -266,13 +353,25 @@ module core
 		.reset,
 		.jump_flag,
 		.handshake_stall,
+		.csr_flush(csr_flush),
 		.data_ok(dresp.data_ok),
 		.dataE_nxt,
-		.dataE
+		.dataE,
+		.counter(ex_mem_counter)
 	);
 
 
 	//-------访存-------
+	exce_mem exce_mem (
+		.addr(dataE.alu_result),
+		.memread(dataE.ctl.memread),
+		.memwrite(dataE.ctl.memwrite),
+		.msize(dataE.ctl.msize),
+		.en(dataE.en),
+		.is_exception(mem_is_exception),
+		.exception(mem_exception)
+	);
+
 	read_memory read_memory (
 		.mem_data(dresp.data),
 		.mem_addr(dataE.alu_result),
@@ -307,7 +406,11 @@ module core
 		.finish(memfinish),
 		.data1(mdata),
 		.data2(mem_store),
-    	.dresp
+    	.dresp,
+		.mem_is_exception(mem_is_exception),
+    	.mem_exception(mem_exception),
+		.pc(pc_nxt0),
+		.jump_flag
 	);
 
 	handshake dbus_handshake (
@@ -321,9 +424,11 @@ module core
 		.reset,
 		.handshake_stall,
 		.jump_flag,
+		.csr_flush(csr_flush),
 		.data_ok(dresp.data_ok),
 		.dataM_nxt,
-    	.dataM
+    	.dataM,
+		.counter(mem_wb_counter)
 	);
 
 	//-------写回-------
@@ -339,6 +444,27 @@ module core
 		.dataM,
 		.wdata,
 		.dataW
+	);
+
+	csr csr(
+		.clk, 
+		.reset,
+		.csr_ra(csr_ra),
+		.stall(handshake_stall),
+		.dataM(dataM),
+		.trint, 
+		.swint, 
+		.exint,
+		.rd(csr_rd),
+		.pcselect_mepc(csr_mepc),
+		.pcselect_mtvec(csr_mtvec),
+		.interrupt_flag
+	);
+
+	flush_csr flush_csr(
+		.csr_data(dataM.csr_data),
+		.interrupt_flag,
+    	.flush(csr_flush)
 	);
 
 	regfile regfile(
@@ -417,30 +543,29 @@ module core
 		.cycleCnt           (0),
 		.instrCnt           (0)
 	);
-	      
 	DifftestCSRState DifftestCSRState(
 		.clock              (clk),
 		.coreid             (0),
-		.priviledgeMode     (3),
-		.mstatus            (0),
-		.sstatus            (0 /* mstatus & 64'h800000030001e000 */),
-		.mepc               (0),
+        .priviledgeMode     (csr.mode_nxt),
+		.mstatus            (csr.regs_nxt.mstatus),
+		.sstatus            (csr.regs_nxt.mstatus & 64'h800000030001e000),
+		.mepc               (csr.regs_nxt.mepc),
 		.sepc               (0),
-		.mtval              (0),
+		.mtval              (csr.regs_nxt.mtval),
 		.stval              (0),
-		.mtvec              (0),
+		.mtvec              (csr.regs_nxt.mtvec),
 		.stvec              (0),
-		.mcause             (0),
+		.mcause             (csr.regs_nxt.mcause),
 		.scause             (0),
 		.satp               (0),
-		.mip                (0),
-		.mie                (0),
-		.mscratch           (0),
+		.mip                (csr.regs_nxt.mip),
+        .mie                (csr.regs_nxt.mie),
+		.mscratch           (csr.regs_nxt.mscratch),
 		.sscratch           (0),
 		.mideleg            (0),
 		.medeleg            (0)
-	      );
-	      
+	);    
+
 	DifftestArchFpRegState DifftestArchFpRegState(
 		.clock              (clk),
 		.coreid             (0),
